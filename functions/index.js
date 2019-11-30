@@ -38,13 +38,46 @@ app.get("/screams", (request, response) => {
       return response.json(screams);
     })
     .catch(err => console.error(err));
-});
+})
+
+const FBAuth = (req, res, next) => {
+    let idToken;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
+      idToken = req.headers.authorization.split('Bearer ')[1];
+    } else {
+      console.error('No token found');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+  
+    admin
+    .auth()
+    .verifyIdToken(idToken)
+    .then((decodedToken) => {
+      req.user = decodedToken;
+      return db
+        .collection('users')
+        .where('userId', '==', req.user.uid)
+        .limit(1)
+        .get();
+    })
+    .then((data) => {
+      req.user.handle = data.docs[0].data().handle;
+      return next();
+    })
+    .catch((err) => {
+      console.error('Error while verifying token ', err);
+      return res.status(403).json(err);
+    });
+};
 
 // Write Data
-app.post("/scream", (request, response) => {
+app.post("/scream", FBAuth, (request, response) => {
   const newScream = {
     body: request.body.body,
-    userHandle: request.body.userHandle,
+    userHandle: request.user.handle,
     createdAt: new Date().toISOString()
   };
 
@@ -123,7 +156,6 @@ app.post("/signup", (request, response) => {
         userId
       };
       return db.doc(`/users/${newUser.handle}`).set(userCredentials);
-      // return response.status(201).json({ token });
     })
     .then(() => {
       return response.status(201).json({ token });
@@ -161,9 +193,9 @@ app.post("/login", (req, res) => {
     })
     .catch(err => {
       console.error(err);
-      if(err.code === 'auth/wrong-password'){
-          return res.status(403).json({ General: 'Wong Password Try Again'})
-      }else return res.status(500).json({ error: err.code });
+      if (err.code === "auth/wrong-password") {
+        return res.status(403).json({ General: "Wong Password Try Again" });
+      } else return res.status(500).json({ error: err.code });
     });
 });
 
